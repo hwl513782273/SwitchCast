@@ -31,7 +31,7 @@ final class StreamController: ObservableObject {
     @Published private(set) var consoles: [DiscoveredConsole] = []
     @Published private(set) var usbDevices: [String] = []
     @Published var host: String = ""
-    @Published var transport: SysDVRConnection.TransportKind = .network
+    @Published var transport: SysDVRConnection.TransportKind = .usb
     @Published var audioEnabled = true {
         didSet { applyAudioState() }
     }
@@ -40,6 +40,9 @@ final class StreamController: ObservableObject {
     @Published private(set) var protocolVersion: String = ""
     @Published private(set) var logs: [String] = []
     @Published private(set) var lastFrameAt: Date?
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordingElapsed: TimeInterval = 0
+    @Published var recordAudio = true
     @Published var volume: Double = 0.8 {
         didSet { applyVolume() }
     }
@@ -53,6 +56,7 @@ final class StreamController: ObservableObject {
     private let decoder = H264Decoder()
     private let audio = PCMAudioPlayer()
     private let discovery = DiscoveryService()
+    private let recorder = Recorder()
     private var statsTimer: Timer?
     private var sessionStart: Date?
     private var framesThisTick = 0
@@ -62,6 +66,9 @@ final class StreamController: ObservableObject {
 
     init() {
         configureCallbacks()
+        recorder.onLog = { [weak self] message in
+            DispatchQueue.main.async { self?.log(message) }
+        }
         discovery.onChange = { [weak self] list in
             guard let self else { return }
             self.consoles = list
@@ -116,7 +123,59 @@ final class StreamController: ObservableObject {
         connection.connect(host: target, kind: transport, withAudio: audioEnabled)
     }
 
+    // MARK: - 截图 / 录屏
+
+    func takeScreenshot() {
+        guard let image = sink.lastImage else {
+            log("还没有画面，无法截图")
+            return
+        }
+        let url = Recorder.outputURL(extension: "png")
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            log("截图编码失败")
+            return
+        }
+        do {
+            try data.write(to: url)
+            log("截图已保存：\(url.path)")
+        } catch {
+            log("截图保存失败：\(error.localizedDescription)")
+        }
+    }
+
+    func toggleRecording() {
+        if isRecording {
+            let url = recorder.stop()
+            isRecording = false
+            recordingElapsed = 0
+            if let url {
+                log("录屏已保存：\(url.path)")
+            } else {
+                log("录屏结束，但文件未能完成写入")
+            }
+        } else {
+            guard let format = decoder.videoFormatDescription else {
+                log("还没有画面，稍后再录")
+                return
+            }
+            do {
+                try recorder.start(withAudio: recordAudio && audioEnabled, videoFormat: format)
+                isRecording = true
+                recordingElapsed = 0
+                log(recordAudio ? "开始录屏（含音频）" : "开始录屏（无声）")
+            } catch {
+                log("录屏失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     func disconnect() {
+        if isRecording {
+            _ = recorder.stop()
+            isRecording = false
+            recordingElapsed = 0
+        }
         connection.disconnect()
         audio?.stop()
         decoder.reset()
@@ -148,7 +207,9 @@ final class StreamController: ObservableObject {
         }
 
         connection.onAudio = { [weak self] payload in
-            self?.audio?.enqueue(payload)
+            guard let self else { return }
+            self.audio?.enqueue(payload)
+            self.recorder.appendAudio(payload)      // 未录制时内部直接返回
         }
 
         connection.onHandshake = { [weak self] info in
@@ -184,6 +245,10 @@ final class StreamController: ObservableObject {
             }
         }
 
+        decoder.onSample = { [weak self] sample in
+            self?.recorder.appendVideo(sample)
+        }
+
         decoder.onFrame = { [weak self] image in
             guard let self else { return }
             self.sink.push(image)
@@ -211,6 +276,9 @@ final class StreamController: ObservableObject {
         stats.frames = totalFrames
         stats.droppedAudio = audio?.droppedPackets ?? 0
         stats.elapsed = sessionStart.map { Date().timeIntervalSince($0) } ?? 0
+        if isRecording, let started = recorder.startedAt {
+            recordingElapsed = Date().timeIntervalSince(started)
+        }
         self.stats = stats
         framesThisTick = 0
         bytesThisTick = 0
@@ -244,6 +312,15 @@ final class StreamController: ObservableObject {
 
     private func log(_ message: String) {
         let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        if let path = ProcessInfo.processInfo.environment["SC_LOG_FILE"], !path.isEmpty {
+            if let handle = FileHandle(forWritingAtPath: path) {
+                handle.seekToEndOfFile()
+                handle.write(Data("[\(stamp)] \(message)\n".utf8))
+                handle.closeFile()
+            } else {
+                FileManager.default.createFile(atPath: path, contents: Data("[\(stamp)] \(message)\n".utf8))
+            }
+        }
         logs.append("[\(stamp)] \(message)")
         if logs.count > 200 {
             logs.removeFirst(logs.count - 200)
@@ -257,12 +334,30 @@ final class StreamController: ObservableObject {
 
         if let target = env["AUTOCONNECT"], !target.isEmpty {
             host = target
-            if env["AUTOCONNECT_TRANSPORT"] == "usb" { transport = .usb }
+            transport = env["AUTOCONNECT_TRANSPORT"] == "usb" ? .usb : .network
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 self?.connect()
             }
         }
 
+        if let raw = env["AUTO_SHOT_AFTER"], let delay = Double(raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.takeScreenshot()
+            }
+        }
+        if env["RECORD_SILENT"] == "1" {
+            recordAudio = false
+        }
+        if let raw = env["AUTO_RECORD_AFTER"], let delay = Double(raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.toggleRecording()
+            }
+        }
+        if let raw = env["AUTO_RECORD_STOP_AFTER"], let delay = Double(raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.toggleRecording()
+            }
+        }
         if let path = env["SNAPSHOT_PATH"], !path.isEmpty {
             let delay = Double(env["SNAPSHOT_AFTER"] ?? "8") ?? 8
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in

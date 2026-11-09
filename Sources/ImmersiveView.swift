@@ -50,6 +50,11 @@ struct ImmersiveView: View {
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(.white.opacity(0.7))
                 }
+                if controller.isRecording {
+                    Text("● REC")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.red)
+                }
                 Spacer()
             }
             .foregroundStyle(.white)
@@ -67,6 +72,24 @@ struct ImmersiveView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.85))
+
+                Button {
+                    controller.takeScreenshot()
+                } label: {
+                    Image(systemName: "camera")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.85))
+
+                Button {
+                    controller.toggleRecording()
+                } label: {
+                    Image(systemName: controller.isRecording ? "stop.circle.fill" : "record.circle")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(controller.isRecording ? .red : .white.opacity(0.85))
 
                 Button {
                     controller.disconnect()

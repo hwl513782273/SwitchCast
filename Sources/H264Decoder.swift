@@ -16,10 +16,14 @@ final class H264Decoder {
     private var currentSize: CGSize = .zero
 
     var onFrame: ((CGImage) -> Void)?
+    /// 解码前的压缩样本（录屏直通复用，避免重新编码）
+    var onSample: ((CMSampleBuffer) -> Void)?
     var onResolution: ((CGSize) -> Void)?
     var onFailure: ((String) -> Void)?
 
     private(set) var isConfigured = false
+    /// 当前 H.264 格式描述（录屏建直通轨用）
+    private(set) var videoFormatDescription: CMVideoFormatDescription?
 
     func reset() {
         if let session {
@@ -27,6 +31,7 @@ final class H264Decoder {
         }
         session = nil
         formatDescription = nil
+        videoFormatDescription = nil
         sps = nil
         pps = nil
         frameIndex = 0
@@ -68,6 +73,7 @@ final class H264Decoder {
             onFailure?("采样缓冲创建失败")
             return
         }
+        onSample?(sample)
         decode(sample)
     }
 
@@ -99,6 +105,7 @@ final class H264Decoder {
 
         guard let description else { return }
         formatDescription = description
+        videoFormatDescription = description
 
         if let session {
             VTDecompressionSessionInvalidate(session)

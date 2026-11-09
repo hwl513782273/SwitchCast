@@ -109,6 +109,20 @@ struct ContentView: View {
                         .background(.black.opacity(0.45))
                         .clipShape(Capsule())
                 }
+
+                if controller.isRecording {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7, height: 7)
+                        Text("REC \(formatDuration(controller.recordingElapsed))")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.black.opacity(0.55))
+                    .clipShape(Capsule())
+                }
                 Spacer()
             }
             .foregroundStyle(.white)
@@ -117,6 +131,23 @@ struct ContentView: View {
             Spacer()
 
             HStack(spacing: 10) {
+                Button {
+                    controller.takeScreenshot()
+                } label: {
+                    Label("截图", systemImage: "camera")
+                }
+                .help("保存 PNG 到桌面（⌘⇧S）")
+                .buttonStyle(.bordered)
+
+                Button {
+                    controller.toggleRecording()
+                } label: {
+                    Label(controller.isRecording ? "停止录制" : "录屏",
+                          systemImage: controller.isRecording ? "stop.circle.fill" : "record.circle")
+                }
+                .help(controller.recordAudio ? "录制画面与声音（⌘⇧R）" : "录制无声画面（⌘⇧R）")
+                .buttonStyle(.bordered)
+
                 Button {
                     (NSApp.delegate as? AppDelegate)?.enterImmersive()
                 } label: {
@@ -357,6 +388,16 @@ struct ContentView: View {
             Toggle("静音", isOn: $controller.muted)
                 .toggleStyle(.checkbox)
                 .font(.caption)
+
+            Divider()
+
+            Toggle("录屏包含音频", isOn: $controller.recordAudio)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+            Text("录制文件保存到桌面（MP4，H.264 直通不重编码）")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

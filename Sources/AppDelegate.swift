@@ -105,6 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let viewMenu = NSMenu(title: "显示")
         viewMenuItem.submenu = viewMenu
         viewMenu.addItem(withTitle: "开始串流", action: #selector(startStreaming), keyEquivalent: "r")
+
+        let shotItem = NSMenuItem(title: "截图", action: #selector(captureScreenshot), keyEquivalent: "s")
+        shotItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(shotItem)
+
+        let recordItem = NSMenuItem(title: "开始/停止录屏", action: #selector(toggleRecording), keyEquivalent: "r")
+        recordItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(recordItem)
         let fullScreenItem = NSMenuItem(title: "全屏", action: #selector(toggleFullScreen), keyEquivalent: "f")
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.insertItem(fullScreenItem, at: 0)
@@ -212,6 +220,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func startStreaming() {
         controller.connect()
+    }
+
+    @objc func captureScreenshot() {
+        controller.takeScreenshot()
+    }
+
+    @objc func toggleRecording() {
+        controller.toggleRecording()
     }
 
     // MARK: - 设置 / 关于
