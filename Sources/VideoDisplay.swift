@@ -5,6 +5,7 @@ import QuartzCore
 /// 承载解码帧的视图（避免 SwiftUI 每帧重绘，直接写 CALayer.contents）
 final class VideoDisplayView: NSView {
     private let imageLayer = CALayer()
+    private var lastImage: CGImage?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -31,7 +32,16 @@ final class VideoDisplayView: NSView {
         CATransaction.commit()
     }
 
+    /// 视图被移出/移回窗口（例如进出全屏、窗口重建）时，自动重放最后一帧
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil, let lastImage {
+            show(lastImage)
+        }
+    }
+
     func show(_ image: CGImage) {
+        lastImage = image
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         imageLayer.contents = image
@@ -39,6 +49,7 @@ final class VideoDisplayView: NSView {
     }
 
     func clear() {
+        lastImage = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         imageLayer.contents = nil
@@ -48,11 +59,21 @@ final class VideoDisplayView: NSView {
 
 /// 控制器与视图之间的帧通道
 final class VideoSink {
-    private weak var view: VideoDisplayView?
+    /// 主窗口和全屏窗口可能同时存在同一个 sink，必须广播给所有活着的视图。
+    /// 只留一个 weak 引用会导致「退出全屏后主窗口一片黑」。
+    private final class WeakView {
+        weak var value: VideoDisplayView?
+        init(_ value: VideoDisplayView) { self.value = value }
+    }
+
+    private var views: [WeakView] = []
     private(set) var lastImage: CGImage?
 
     func attach(_ view: VideoDisplayView) {
-        self.view = view
+        views.removeAll { $0.value == nil }
+        if !views.contains(where: { $0.value === view }) {
+            views.append(WeakView(view))
+        }
         if let lastImage {
             view.show(lastImage)
         }
@@ -60,12 +81,18 @@ final class VideoSink {
 
     func push(_ image: CGImage) {
         lastImage = image
-        view?.show(image)
+        views.removeAll { $0.value == nil }
+        for entry in views {
+            entry.value?.show(image)
+        }
     }
 
     func clear() {
         lastImage = nil
-        view?.clear()
+        views.removeAll { $0.value == nil }
+        for entry in views {
+            entry.value?.clear()
+        }
     }
 }
 

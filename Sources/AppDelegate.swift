@@ -27,6 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.enterImmersive()
             }
         }
+        if let raw = env["IMMERSIVE_EXIT_AFTER"], let delay = Double(raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.exitImmersive()
+            }
+        }
         if let shotPath = env["WINDOW_SHOT"], !shotPath.isEmpty {
             let delay = Double(env["WINDOW_SHOT_AFTER"] ?? "6") ?? 6
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
