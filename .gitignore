@@ -1,0 +1,5 @@
+build/
+*.dmg
+.DS_Store
+Resources/AppIcon.iconset/
+Tests/__pycache__/
