@@ -68,17 +68,17 @@ cd SwitchCast
 
 ```
 ./make_dmg.sh
-# 产物：12-SwitchCast-1.0.5-universal.dmg
+# 产物：12-SwitchCast-1.0.11-universal.dmg
 ```
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）— 推荐**：下载 `12-SwitchCast-1.0.5-universal.dmg`（通用二进制，Intel 机型同样可用）。
-- **Intel Mac**：同样使用 `12-SwitchCast-1.0.5-universal.dmg`（内含 x86_64 切片）。
+- **Apple Silicon（M1 及更新）— 推荐**：下载 `12-SwitchCast-1.0.11-universal.dmg`（通用二进制，Intel 机型同样可用）。
+- **Intel Mac**：同样使用 `12-SwitchCast-1.0.11-universal.dmg`（内含 x86_64 切片）。
 
 > 各档 DMG 均为 ad-hoc 签名、**未公证（notarized）**，首次打开请右键「打开」放行 Gatekeeper；本应用不联网、不收集任何数据。
 
-> 仓库「发行版 / Releases」的命名格式为：`支持最低版本-SwitchCast-版本-架构`（如 `12-SwitchCast-1.0.5-universal.dmg`）。第一段数字为该包实际支持的最低 macOS 版本号。
+> 仓库「发行版 / Releases」的命名格式为：`支持最低版本-SwitchCast-版本-架构`（如 `12-SwitchCast-1.0.11-universal.dmg`）。第一段数字为该包实际支持的最低 macOS 版本号。
 
 ### 支持的功能
 
@@ -142,17 +142,17 @@ Package the DMG (uses the built-in hdiutil, no extra dependency):
 
 ```
 ./make_dmg.sh
-# output: 12-SwitchCast-1.0.5-universal.dmg
+# output: 12-SwitchCast-1.0.11-universal.dmg
 ```
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 and later) — Recommended**: download `12-SwitchCast-1.0.5-universal.dmg` (universal binary, also runs on Intel).
-- **Intel Mac**: the same `12-SwitchCast-1.0.5-universal.dmg` (contains the x86_64 slice).
+- **Apple Silicon (M1 and later) — Recommended**: download `12-SwitchCast-1.0.11-universal.dmg` (universal binary, also runs on Intel).
+- **Intel Mac**: the same `12-SwitchCast-1.0.11-universal.dmg` (contains the x86_64 slice).
 
 > All DMGs are ad-hoc signed and **not notarized**. Right-click → Open on first launch to pass Gatekeeper. The app never phones home and collects nothing.
 
-> Release naming format: `minimum-macOS-version-SwitchCast-version-arch` (e.g. `12-SwitchCast-1.0.5-universal.dmg`).
+> Release naming format: `minimum-macOS-version-SwitchCast-version-arch` (e.g. `12-SwitchCast-1.0.11-universal.dmg`).
 
 ### Supported features
 
