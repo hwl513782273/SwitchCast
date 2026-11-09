@@ -195,7 +195,9 @@ final class SysDVRConnection {
         case .network:
             return TCPTransport(host: host, port: SysDVR.videoPort)
         case .usb:
-            return UsbTransport()
+            let transport = UsbTransport()
+            transport.onLog = { [weak self] message in self?.log(message) }
+            return transport
         }
     }
 
@@ -203,7 +205,23 @@ final class SysDVRConnection {
 
     private func handshake(transport: StreamTransport, stream: Stream, metaFlags: UInt8) throws -> String {
         // 主机先发 hello："SysDVR|02\0"
-        let helloData = try transport.readHandshakeBytes(SysDVR.helloSize)
+        // USB 侧 sysmodule 是「写不出去就 1 秒后重试」，这里同频重试，避免一超时就关设备触发重新枚举
+        var helloData = Data()
+        var lastError: Error?
+        let attempts = stream == .video ? 3 : 1
+        for attempt in 0..<attempts {
+            do {
+                helloData = try transport.readHandshakeBytes(SysDVR.helloSize)
+                lastError = nil
+                break
+            } catch {
+                lastError = error
+                if attempt < attempts - 1 {
+                    Thread.sleep(forTimeInterval: 1.0)
+                }
+            }
+        }
+        if let lastError { throw lastError }
         let hello = [UInt8](helloData)
         guard hello.count >= SysDVR.helloSize,
               String(decoding: hello[0..<7], as: UTF8.self) == "SysDVR|" else {

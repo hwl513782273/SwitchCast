@@ -118,10 +118,11 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    (NSApp.delegate as? AppDelegate)?.toggleFullScreen()
+                    (NSApp.delegate as? AppDelegate)?.enterImmersive()
                 } label: {
                     Label("全屏", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
+                .help("只看画面（Esc 退出）")
                 .buttonStyle(.bordered)
 
                 Spacer()
@@ -201,6 +202,38 @@ struct ContentView: View {
                             .padding(.vertical, 8)
                             .frame(width: 320)
                             .background(.white.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white)
+                    }
+                }
+            }
+
+            if !controller.usbDevices.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(controller.usbDevices, id: \.self) { serial in
+                        Button {
+                            controller.connectUSB()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "cable.connector")
+                                    .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(serial)
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("USB 直连 · 已识别")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                                Spacer()
+                                Text("连接")
+                                    .font(.system(size: 11))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(width: 320)
+                            .background(.white.opacity(0.16))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)

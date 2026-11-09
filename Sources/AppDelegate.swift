@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWC: NSWindowController?
     private var settingsWC: NSWindowController?
     private var aboutWC: NSWindowController?
+    private var immersiveWindow: ImmersiveWindow?
+    private var keyMonitor: Any?
+    private var mouseMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -19,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if env["OPEN_SETTINGS"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.showSettings() }
         }
+        if let raw = env["IMMERSIVE_AFTER"], let delay = Double(raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.enterImmersive()
+            }
+        }
         if let shotPath = env["WINDOW_SHOT"], !shotPath.isEmpty {
             let delay = Double(env["WINDOW_SHOT_AFTER"] ?? "6") ?? 6
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -29,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 自渲染窗口截图（不依赖屏幕录制权限），仅用于构建验证
     private func captureWindow(to path: String) {
-        guard let window = mainWC?.window, let view = window.contentView else { return }
+        let target = NSApp.keyWindow ?? immersiveWindow ?? mainWC?.window
+        guard let window = target, let view = window.contentView else { return }
         let bounds = view.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
         let scale = window.backingScaleFactor
@@ -61,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSApp.presentationOptions = []
         controller.disconnect()
     }
 
@@ -131,8 +141,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// 真正的「只看游戏」全屏：无边框窗口铺满屏幕，隐藏标题栏/侧栏，控制条自动淡出
+    @objc func enterImmersive() {
+        guard immersiveWindow == nil else { return }
+        guard let screen = mainWC?.window?.screen ?? NSScreen.main else { return }
+
+        let window = ImmersiveWindow(
+            contentRect: screen.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = true
+        window.backgroundColor = .black
+        window.level = .normal
+        window.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
+        window.acceptsMouseMovedEvents = true
+        window.contentView = NSHostingView(
+            rootView: ImmersiveView(controller: controller, sink: controller.sink)
+        )
+        window.setFrame(screen.frame, display: true)
+        window.makeKeyAndOrderFront(nil)
+
+        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+        NSApp.activate(ignoringOtherApps: true)
+        mainWC?.window?.orderOut(nil)
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {          // Esc
+                self?.exitImmersive()
+                return nil
+            }
+            return event
+        }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            NotificationCenter.default.post(name: .immersiveMouseMoved, object: nil)
+            return event
+        }
+
+        immersiveWindow = window
+    }
+
+    @objc func exitImmersive() {
+        guard immersiveWindow != nil else { return }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        keyMonitor = nil
+        mouseMonitor = nil
+
+        NSApp.presentationOptions = []
+        immersiveWindow?.orderOut(nil)
+        immersiveWindow = nil
+
+        mainWC?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func toggleFullScreen() {
-        mainWC?.window?.toggleFullScreen(nil)
+        if immersiveWindow != nil {
+            exitImmersive()
+        } else {
+            enterImmersive()
+        }
     }
 
     @objc func startStreaming() {

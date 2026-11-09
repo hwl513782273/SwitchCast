@@ -29,6 +29,7 @@ final class StreamController: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var consoles: [DiscoveredConsole] = []
+    @Published private(set) var usbDevices: [String] = []
     @Published var host: String = ""
     @Published var transport: SysDVRConnection.TransportKind = .network
     @Published var audioEnabled = true {
@@ -125,6 +126,11 @@ final class StreamController: ObservableObject {
         log("已断开")
     }
 
+    func connectUSB() {
+        transport = .usb
+        connect()
+    }
+
     func select(console: DiscoveredConsole) {
         transport = .network
         host = console.address
@@ -208,6 +214,12 @@ final class StreamController: ObservableObject {
         self.stats = stats
         framesThisTick = 0
         bytesThisTick = 0
+
+        // USB 设备是物理插拔事件，1 秒一探足够
+        let detected = UsbTransport.detectDevices()
+        if detected != usbDevices {
+            usbDevices = detected
+        }
     }
 
     /// 音频开关热生效：关闭即停止播放，打开则重启引擎
