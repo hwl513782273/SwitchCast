@@ -3,6 +3,7 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var controller: StreamController
+    @AppStorage("recordFolderPath") private var recordFolderPath = ""
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -394,7 +395,7 @@ struct ContentView: View {
             Toggle("录屏包含音频", isOn: $controller.recordAudio)
                 .toggleStyle(.checkbox)
                 .font(.caption)
-            Text("录制文件保存到桌面（MP4，H.264 直通不重编码）")
+            Text("录制保存到「\(recordFolderPath.isEmpty ? "影片" : URL(fileURLWithPath: recordFolderPath).lastPathComponent)」（MP4，H.264 直通不重编码）")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

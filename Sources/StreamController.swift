@@ -84,6 +84,7 @@ final class StreamController: ObservableObject {
             self?.tick()
         }
         applyVolume()
+        applyStoredDefaults()
         runDebugHooks()
     }
 
@@ -130,7 +131,7 @@ final class StreamController: ObservableObject {
             log("还没有画面，无法截图")
             return
         }
-        let url = Recorder.outputURL(extension: "png")
+        let url = Recorder.screenshotURL()
         let bitmap = NSBitmapImageRep(cgImage: image)
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
             log("截图编码失败")
@@ -304,6 +305,17 @@ final class StreamController: ObservableObject {
             audio?.stop()
             log("音频已关闭")
         }
+    }
+
+    /// 启动时套用设置里的默认值（连接方式、音频）
+    private func applyStoredDefaults() {
+        if let stored = UserDefaults.standard.string(forKey: "defaultTransport") {
+            transport = stored == "network" ? .network : .usb
+        }
+        if UserDefaults.standard.object(forKey: "audioEnabledDefault") != nil {
+            audioEnabled = UserDefaults.standard.bool(forKey: "audioEnabledDefault")
+        }
+        log("录屏保存位置：\(Recorder.ensureRecordFolder().path)")
     }
 
     private func applyVolume() {

@@ -24,7 +24,7 @@ final class Recorder {
         lock.lock(); defer { lock.unlock() }
         guard !isRecording else { return }
 
-        let target = Self.outputURL(extension: "mp4")
+        let target = Self.recordingURL()
         let writer = try AVAssetWriter(outputURL: target, fileType: .mp4)
 
         // 轨道必须在 startWriting 之前添加
@@ -52,7 +52,7 @@ final class Recorder {
         guard writer.startWriting() else {
             throw RecorderError.writerFailed(writer.error?.localizedDescription ?? "无法开始写入")
         }
-        onLog?("录制已开始：\(target.lastPathComponent)（音频：\(withAudio ? "开" : "关")）")
+        onLog?("录制已开始：\(target.path)（音频：\(withAudio ? "开" : "关")）")
 
         self.writer = writer
         self.url = target
@@ -210,10 +210,45 @@ final class Recorder {
         return description
     }
 
-    static func outputURL(extension ext: String) -> URL {
+    // MARK: - 保存位置
+
+    /// 录屏目录：默认「影片」，可在设置里改
+    static var recordFolder: URL {
+        get {
+            if let path = UserDefaults.standard.string(forKey: "recordFolderPath"),
+               !path.trimmingCharacters(in: .whitespaces).isEmpty {
+                return URL(fileURLWithPath: path, isDirectory: true)
+            }
+            return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies", isDirectory: true)
+        }
+        set {
+            UserDefaults.standard.set(newValue.path, forKey: "recordFolderPath")
+        }
+    }
+
+    static var recordFolderDisplayName: String {
+        recordFolder.lastPathComponent
+    }
+
+    @discardableResult
+    static func ensureRecordFolder() -> URL {
+        let folder = recordFolder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    static func recordingURL() -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let name = "SwitchCast-\(formatter.string(from: Date())).\(ext)"
+        let name = "SwitchCast-\(formatter.string(from: Date())).mp4"
+        return ensureRecordFolder().appendingPathComponent(name)
+    }
+
+    /// 截图仍放桌面（随手可取）
+    static func screenshotURL() -> URL {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let name = "SwitchCast-\(formatter.string(from: Date())).png"
         return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Desktop")
             .appendingPathComponent(name)
