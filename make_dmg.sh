@@ -3,11 +3,12 @@ set -e
 cd "$(dirname "$0")"
 
 APP_NAME="SwitchCast"
-VERSION="1.0.4"
+VERSION="1.0.5"
 APP_PATH="build/$APP_NAME.app"
 VOL_NAME="Switch Cast"
 DMG_NAME="12-${APP_NAME}-${VERSION}-universal.dmg"
-DEST_DIR="/Users/banqiu/WorkBuddy/DMG"
+# 产物复制目录可用环境变量覆盖，默认就在仓库根目录
+DEST_DIR="${DEST_DIR:-.}"
 
 [ -d "$APP_PATH" ] || { echo "❌ 先运行 ./build.sh"; exit 1; }
 
@@ -17,7 +18,7 @@ ln -s /Applications "$STAGING/Applications"
 
 echo "💿 生成 DMG: $DMG_NAME"
 hdiutil create -volname "$VOL_NAME" -srcfolder "$STAGING" -ov -format UDZO "$DMG_NAME"
-mv "$STAGING" "$HOME/.Trash/switchcast-dmg-staging-$(date +%s)"
+mv "$STAGING" "${TMPDIR:-/tmp}/switchcast-dmg-staging-$(date +%s)"
 
 mkdir -p "$DEST_DIR"
 if [ -f "$DEST_DIR/$DMG_NAME" ]; then

@@ -37,7 +37,7 @@ struct AboutView: View {
 
             Divider()
 
-            Text("协议实现参考 exelix11/SysDVR（GPL-2.0）公开文档，本 App 为独立实现。")
+            Text("本项目以 GPL-2.0 发布。协议实现参考 exelix11/SysDVR（GPL-2.0）的公开文档与 sysmodule 源码，为独立的 Swift 原生重写。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

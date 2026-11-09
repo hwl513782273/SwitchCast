@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.4</string>
+    <string>1.0.5</string>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>6</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSApplicationCategoryType</key>
@@ -31,7 +31,7 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>Switch Cast 需要访问局域网，以便发现并连接同一网络下的 Nintendo Switch 主机。</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 banqiu. 基于 SysDVR 公开协议实现。</string>
+    <string>Copyright © 2026 banqiu. GPL-2.0. 基于 exelix11/SysDVR 公开协议实现。</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
