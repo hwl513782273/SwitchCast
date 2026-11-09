@@ -13,6 +13,9 @@ final class H264Decoder {
     private var pps: [UInt8]?
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
     private var frameIndex: Int64 = 0
+    /// 是否已收到 IDR。SysDVR 的流可能从 P 帧开始，第一个 IDR 之前的帧没有参考帧，
+    /// 送去解码必然报 kVTVideoDecoderBadDataErr(-12909)，所以直接丢掉。
+    private var seenKeyframe = false
     private var currentSize: CGSize = .zero
 
     var onFrame: ((CGImage) -> Void)?
@@ -35,6 +38,7 @@ final class H264Decoder {
         sps = nil
         pps = nil
         frameIndex = 0
+        seenKeyframe = false
         currentSize = .zero
         isConfigured = false
     }
@@ -46,17 +50,21 @@ final class H264Decoder {
 
         var vcl: [ArraySlice<UInt8>] = []
         var paramsChanged = false
+        var hasKeyframe = false
 
         for nal in nals {
             guard let header = nal.first else { continue }
             switch header & 0x1F {
+            case 5:
+                hasKeyframe = true
+                vcl.append(nal)
             case 7:
                 let value = Array(nal)
                 if sps != value { sps = value; paramsChanged = true }
             case 8:
                 let value = Array(nal)
                 if pps != value { pps = value; paramsChanged = true }
-            case 1, 5, 6:
+            case 1, 6:
                 vcl.append(nal)
             default:
                 break
@@ -69,6 +77,11 @@ final class H264Decoder {
 
         guard !vcl.isEmpty else { return }
         guard isConfigured else { return }
+
+        // 参数集变了就重新等一个 IDR
+        if paramsChanged { seenKeyframe = false }
+        if hasKeyframe { seenKeyframe = true }
+        guard seenKeyframe else { return }
         guard let sample = makeSampleBuffer(nals: vcl) else {
             onFailure?("采样缓冲创建失败")
             return
@@ -105,6 +118,7 @@ final class H264Decoder {
 
         guard let description else { return }
         formatDescription = description
+        seenKeyframe = false
         videoFormatDescription = description
 
         if let session {

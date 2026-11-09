@@ -397,7 +397,7 @@ enum UsbError: LocalizedError {
         case .shortRead:
             return "USB 握手数据不完整"
         case .noHello:
-            return "已找到 USB 设备，但控制台没有回应。请确认 Switch 上 SysDVR 设置里的模式是 USB（不是 TCP Bridge），然后重新插拔一次数据线"
+            return "已找到 USB 设备，但控制台没有回应（读、写都超时）。请依次确认：① 点亮 Switch 屏幕并进入任意游戏——主机休眠时 SysDVR 会停掉串流线程；② SysDVR 模式是 USB（不是 TCP Bridge）；③ 重新插拔一次数据线"
         case .ioFailed(let code):
             return String(format: "USB 传输错误 0x%08X", code)
         }

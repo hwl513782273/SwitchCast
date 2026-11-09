@@ -75,7 +75,7 @@ final class LegacyUSBTransport: StreamTransport {
             return sc_usb_write(handle, base, Int32(data.count))
         }
         guard written == Int32(data.count) else {
-            throw UsbError.ioFailed(IOReturn(written))
+            throw UsbError.ioFailed(IOReturn(bitPattern: sc_usb_last_status(handle)))
         }
     }
 
@@ -96,7 +96,7 @@ final class LegacyUSBTransport: StreamTransport {
         }
         if read == Int32(SC_USB_ERR_TIMEOUT) { throw UsbError.timeout }
         if read == Int32(SC_USB_ERR_CLOSED) { throw UsbError.closed }
-        throw UsbError.ioFailed(IOReturn(read))
+        throw UsbError.ioFailed(IOReturn(bitPattern: sc_usb_last_status(handle)))
     }
 
     private static func error(for code: Int32) -> UsbError {
@@ -156,14 +156,10 @@ final class USBTransportFacade: StreamTransport {
                 impl = legacy
             }
         } else {
-            do {
-                try legacy.connect()
-                impl = legacy
-            } catch {
-                onLog?("[USB] IOUSBLib 老栈失败（\(error.localizedDescription)），改用现代路径")
-                try modern.connect()
-                impl = modern
-            }
+            // 这台系统上绝不能回退到现代路径：IOUSBHost 一碰这个设备就会触发重新枚举，
+            // 设备直接从总线上消失（实测过两次），所以老栈失败就直接报错。
+            try legacy.connect()
+            impl = legacy
         }
     }
 

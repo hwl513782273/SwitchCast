@@ -24,6 +24,7 @@ typedef struct {
     UInt8 inPipe;
     UInt8 outPipe;
     char serial[160];
+    IOReturn lastStatus;   // 最近一次 IO 的原始 IOReturn，便于诊断
 } sc_usb_t;
 
 static int sc_serial_for_service(io_service_t service, char *out, size_t len)
@@ -90,7 +91,14 @@ void *sc_usb_open(const char *serial_prefix, int *out_err)
         free(handle); IOObjectRelease(service); return NULL;
     }
 
-    if ((*handle->dev)->USBDeviceOpen(handle->dev) != kIOReturnSuccess) {
+    // 先 Seize（强制独占，libusb 在 macOS 上就是这么干的），拿不到再退回普通 open。
+    // 少了这一步，设备虽然能"打开"，但接口仍被 AppleUSBHostLegacyClient 占着，
+    // 后续 bulk 写会返回 kIOReturnNotPermitted (0xE00002ED)。
+    IOReturn openResult = (*handle->dev)->USBDeviceOpenSeize(handle->dev);
+    if (openResult != kIOReturnSuccess) {
+        openResult = (*handle->dev)->USBDeviceOpen(handle->dev);
+    }
+    if (openResult != kIOReturnSuccess) {
         if (out_err) *out_err = SC_USB_ERR_BUSY;
         (*handle->dev)->Release(handle->dev);
         free(handle); IOObjectRelease(service); return NULL;
@@ -141,7 +149,13 @@ void *sc_usb_open(const char *serial_prefix, int *out_err)
         free(handle); IOObjectRelease(service); return NULL;
     }
 
-    if ((*handle->intf)->USBInterfaceOpen(handle->intf) != kIOReturnSuccess) {
+    // 接口同样先 Seize：macOS 12 上接口默认归 AppleUSBHostLegacyClient，
+    // 不夺权的话 USBInterfaceOpen 能成功但读写都会被拒。
+    IOReturn intfResult = (*handle->intf)->USBInterfaceOpenSeize(handle->intf);
+    if (intfResult != kIOReturnSuccess) {
+        intfResult = (*handle->intf)->USBInterfaceOpen(handle->intf);
+    }
+    if (intfResult != kIOReturnSuccess) {
         if (out_err) *out_err = SC_USB_ERR_BUSY;
         (*handle->intf)->Release(handle->intf);
         (*handle->dev)->USBDeviceClose(handle->dev);
@@ -171,6 +185,11 @@ void *sc_usb_open(const char *serial_prefix, int *out_err)
     }
 
     IOObjectRelease(service);
+
+    // 上一个客户端异常退出可能留下 stall，清一次再开始
+    (*handle->intf)->ClearPipeStallBothEnds(handle->intf, handle->inPipe);
+    (*handle->intf)->ClearPipeStallBothEnds(handle->intf, handle->outPipe);
+
     if (out_err) *out_err = SC_USB_OK;
     return handle;
 }
@@ -182,6 +201,7 @@ int sc_usb_read(void *opaque, void *buffer, int length, int timeout_ms)
     UInt32 size = (UInt32)length;
     IOReturn kr = (*handle->intf)->ReadPipeTO(handle->intf, handle->inPipe, buffer, &size, 0,
                                               (UInt32)timeout_ms);
+    handle->lastStatus = kr;
     if (kr == kIOReturnSuccess) return (int)size;
     if (kr == kIOReturnTimeout || kr == (IOReturn)0xE0004061) return SC_USB_ERR_TIMEOUT;
     return SC_USB_ERR_IO;
@@ -193,6 +213,7 @@ int sc_usb_write(void *opaque, const void *buffer, int length)
     if (!handle || !handle->intf) return SC_USB_ERR_CLOSED;
     IOReturn kr = (*handle->intf)->WritePipeTO(handle->intf, handle->outPipe, (void *)buffer,
                                                (UInt32)length, 0, 2000);
+    handle->lastStatus = kr;
     return kr == kIOReturnSuccess ? length : SC_USB_ERR_IO;
 }
 
@@ -218,6 +239,13 @@ int sc_usb_serial(void *opaque, char *out, int length)
     strncpy(out, handle->serial, (size_t)length - 1);
     out[length - 1] = 0;
     return 0;
+}
+
+/// 最近一次 IO 的原始 IOReturn（0 表示成功）
+unsigned int sc_usb_last_status(void *opaque)
+{
+    sc_usb_t *handle = (sc_usb_t *)opaque;
+    return handle ? (unsigned int)handle->lastStatus : 0;
 }
 
 int sc_usb_available(void)

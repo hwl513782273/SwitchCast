@@ -32,6 +32,9 @@ void sc_usb_close(void *handle);
 /// 取出设备序列号，返回 0 表示成功。
 int sc_usb_serial(void *handle, char *out, int length);
 
+/// 最近一次 IO 的原始 IOReturn（0 表示成功），用于错误诊断。
+unsigned int sc_usb_last_status(void *handle);
+
 /// 老栈上是否存在 SysDVR 设备（只读，不打开）。
 int sc_usb_available(void);
 
