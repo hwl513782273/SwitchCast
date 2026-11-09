@@ -32,6 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.exitImmersive()
             }
         }
+        if env["EXPORT_DIAG"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.exportUsbDiagnostics()
+            }
+        }
         if let shotPath = env["WINDOW_SHOT"], !shotPath.isEmpty {
             let delay = Double(env["WINDOW_SHOT_AFTER"] ?? "6") ?? 6
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -113,6 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recordItem = NSMenuItem(title: "开始/停止录屏", action: #selector(toggleRecording), keyEquivalent: "r")
         recordItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(recordItem)
+
+        viewMenu.addItem(.separator())
+        let diagItem = NSMenuItem(title: "导出 USB 诊断…", action: #selector(exportUsbDiagnostics), keyEquivalent: "d")
+        diagItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(diagItem)
         let fullScreenItem = NSMenuItem(title: "全屏", action: #selector(toggleFullScreen), keyEquivalent: "f")
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.insertItem(fullScreenItem, at: 0)
@@ -230,6 +240,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.toggleRecording()
     }
 
+    /// 导出 USB 诊断：把 ioreg 的 USB 树 + 本应用的识别结果写到桌面，便于远程排查
+    @objc func exportUsbDiagnostics() {
+        var report = ""
+        report += "SwitchCast USB 诊断\n"
+        report += "时间：\(Date())\n"
+        report += "系统：\(ProcessInfo.processInfo.operatingSystemVersionString)\n"
+        report += "架构：\(ProcessInfo.processInfo.machineHardwareName)\n"
+        report += "应用版本：\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")\n"
+
+        let serials = UsbTransport.detectDevices()
+        report += "\n识别到的 SysDVR 设备：\(serials.isEmpty ? "无" : serials.joined(separator: ", "))\n"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+        process.arguments = ["-p", "IOUSB", "-l", "-w", "0"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let text = String(decoding: data, as: UTF8.self)
+            let filtered = text
+                .components(separatedBy: "\n")
+                .filter { line in
+                    ["USB Serial Number", "idVendor", "idProduct", "USB Product Name",
+                     "IOObjectClass", "IOClass", "bNumEndpoints", "bEndpointAddress", "bInterfaceNumber",
+                     "IOProviderClass", "\"name\""].contains { line.contains($0) }
+                }
+                .joined(separator: "\n")
+            report += "\n=== ioreg 过滤结果 ===\n\(filtered)\n"
+        } catch {
+            report += "\n读取 ioreg 失败：\(error.localizedDescription)\n"
+        }
+
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop")
+            .appendingPathComponent("SwitchCast-USB诊断.txt")
+        try? report.write(to: url, atomically: true, encoding: .utf8)
+        controller.log("USB 诊断已导出：\(url.path)")
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     // MARK: - 设置 / 关于
 
     @objc func showSettings() {
@@ -268,5 +321,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         aboutWC?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+
+extension ProcessInfo {
+    var machineHardwareName: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machine = withUnsafeBytes(of: &systemInfo.machine) { raw -> String in
+            let bytes = raw.prefix(while: { $0 != 0 })
+            return String(decoding: Array(bytes), as: UTF8.self)
+        }
+        return machine
     }
 }

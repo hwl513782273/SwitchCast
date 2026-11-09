@@ -75,7 +75,7 @@ final class UsbTransport: StreamTransport {
         }
 
         guard let interface = try openChildInterface(of: service) else {
-            throw UsbError.noEndpoints
+            throw UsbError.noInterface
         }
         hostInterface = interface
 
@@ -219,32 +219,90 @@ final class UsbTransport: StreamTransport {
         throw UsbError.notFound
     }
 
-    /// 设备子节点里找 IOUSBHostInterface 并打开
+    /// 找并打开 IOUSBHostInterface。
+    /// 刚插上/刚重枚举时接口节点会比设备晚一步发布，所以这里轮询最多 3 秒；
+    /// 子节点里找不到时再退回「全局枚举接口 + 比对父设备序列号」。
     private func openChildInterface(of deviceService: io_service_t) throws -> IOUSBHostInterface? {
+        let deadline = Date().addingTimeInterval(3)
+        var lastClasses: [String] = []
+
+        repeat {
+            if let opened = try findInterfaceUnder(deviceService, seen: &lastClasses) {
+                return opened
+            }
+            if let opened = try findInterfaceGlobally() {
+                log("通过全局枚举找到了接口")
+                return opened
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+
+        if !lastClasses.isEmpty {
+            log("设备子节点类名：\(lastClasses.joined(separator: ", "))")
+        }
+        return nil
+    }
+
+    private func findInterfaceUnder(_ deviceService: io_service_t, seen: inout [String]) throws -> IOUSBHostInterface? {
         var childIterator: io_iterator_t = 0
         guard IORegistryEntryGetChildIterator(deviceService, kIOServicePlane, &childIterator) == KERN_SUCCESS else {
             return nil
         }
         defer { IOObjectRelease(childIterator) }
 
+        seen = []
         while true {
             let child = IOIteratorNext(childIterator)
             if child == 0 { break }
 
             var className = [CChar](repeating: 0, count: 128)
             IOObjectGetClass(child, &className)
-            guard String(cString: className) == "IOUSBHostInterface" else {
+            let name = String(cString: className)
+            seen.append(name)
+
+            guard name == "IOUSBHostInterface" else {
                 IOObjectRelease(child)
                 continue
             }
+            // 成功后不释放 child：IOUSBHostInterface 会持有该 io_service
+            return try IOUSBHostInterface(__ioService: child, options: [], queue: nil, interestHandler: nil)
+        }
+        return nil
+    }
 
-            do {
-                // 成功后不释放 child：IOUSBHostInterface 会持有该 io_service
-                return try IOUSBHostInterface(__ioService: child, options: [], queue: nil, interestHandler: nil)
-            } catch {
-                IOObjectRelease(child)
-                throw UsbError.openFailed("\(error.localizedDescription)。若官方 SysDVR-Client 正在运行，请先退出它（同一时间只能有一个程序占用设备）")
+    /// 兜底：接口服务不带 VID/PID，只能靠父链上的序列号认领
+    private func findInterfaceGlobally() throws -> IOUSBHostInterface? {
+        let match = IOServiceMatching("IOUSBHostInterface")
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, match, &iterator) == KERN_SUCCESS else {
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+
+        while true {
+            let service = IOIteratorNext(iterator)
+            if service == 0 { break }
+
+            var current = service
+            var matched = false
+            for _ in 0..<4 {
+                if Self.serialString(forService: current).hasPrefix(Self.serialPrefix) {
+                    matched = true
+                    break
+                }
+                var parent: io_registry_entry_t = 0
+                guard IORegistryEntryGetParentEntry(current, kIOServicePlane, &parent) == KERN_SUCCESS, parent != 0 else {
+                    break
+                }
+                if current != service { IOObjectRelease(current) }
+                current = parent
             }
+            if current != service { IOObjectRelease(current) }
+
+            if matched {
+                return try IOUSBHostInterface(__ioService: service, options: [], queue: nil, interestHandler: nil)
+            }
+            IOObjectRelease(service)
         }
         return nil
     }
@@ -306,6 +364,7 @@ enum UsbError: LocalizedError {
     case notFound
     case openFailed(String)
     case noEndpoints
+    case noInterface
     case pipeFailed(String)
     case bufferFailed
     case notConnected
@@ -322,7 +381,9 @@ enum UsbError: LocalizedError {
         case .openFailed(let detail):
             return "USB 设备打开失败：\(detail)"
         case .noEndpoints:
-            return "USB 接口缺少 bulk 端点"
+            return "USB 接口里没有找到 bulk 端点（设备可能刚被其他程序占用，重插数据线后重试）"
+        case .noInterface:
+            return "已认出设备，但系统还没发布它的 USB 接口：请等 1 秒再点连接；仍失败就重新插拔一次数据线（官方 SysDVR-Client 若在运行请先退出）"
         case .pipeFailed(let detail):
             return "USB 端点打开失败：\(detail)"
         case .bufferFailed:

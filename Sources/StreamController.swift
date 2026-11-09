@@ -322,7 +322,7 @@ final class StreamController: ObservableObject {
         audio?.volume = muted ? 0 : Float(volume)
     }
 
-    private func log(_ message: String) {
+    func log(_ message: String) {
         let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         if let path = ProcessInfo.processInfo.environment["SC_LOG_FILE"], !path.isEmpty {
             if let handle = FileHandle(forWritingAtPath: path) {
