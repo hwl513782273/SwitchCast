@@ -54,6 +54,17 @@ final class StreamController: ObservableObject {
 
     private let connection = SysDVRConnection()
     private let decoder = H264Decoder()
+
+    // MARK: - 解码管线：收包线程只负责收，解码在专用队列，避免互相阻塞
+    private let decodeQueue = DispatchQueue(label: "switchcast.video.decode", qos: .userInteractive)
+    private var decodeBacklog = 0
+    private var skippingUntilKeyframe = false
+    private let backlogLock = NSLock()
+
+    // 显示合并：主线程忙时只保留最新一帧，避免积压后一次性抖出来
+    private var latestImage: CGImage?
+    private var imageFlushScheduled = false
+    private let imageLock = NSLock()
     private let audio = PCMAudioPlayer()
     private let discovery = DiscoveryService()
     private let recorder = Recorder()
@@ -172,6 +183,14 @@ final class StreamController: ObservableObject {
     }
 
     func disconnect() {
+        backlogLock.lock()
+        decodeBacklog = 0
+        skippingUntilKeyframe = false
+        backlogLock.unlock()
+        imageLock.lock()
+        latestImage = nil
+        imageFlushScheduled = false
+        imageLock.unlock()
         if isRecording {
             _ = recorder.stop()
             isRecording = false
@@ -204,7 +223,7 @@ final class StreamController: ObservableObject {
             guard let self else { return }
             self.totalBytes += payload.count
             self.bytesThisTick += payload.count
-            self.decoder.handle(packet: payload)
+            self.enqueueForDecode(payload)
         }
 
         connection.onAudio = { [weak self] payload in
@@ -252,10 +271,10 @@ final class StreamController: ObservableObject {
 
         decoder.onFrame = { [weak self] image in
             guard let self else { return }
-            self.sink.push(image)
             self.framesThisTick += 1
             self.totalFrames += 1
             self.lastFrameAt = Date()
+            self.present(image)
         }
 
         decoder.onResolution = { [weak self] size in
@@ -267,6 +286,62 @@ final class StreamController: ObservableObject {
         decoder.onFailure = { [weak self] message in
             guard let self else { return }
             DispatchQueue.main.async { self.log(message) }
+        }
+    }
+
+    /// 收包线程调用：只做队列调度，绝不在这里解码
+    private func enqueueForDecode(_ payload: Data) {
+        let isKeyframe = H264Decoder.containsIDR(payload)
+
+        backlogLock.lock()
+        if skippingUntilKeyframe {
+            guard isKeyframe else { backlogLock.unlock(); return }
+            skippingUntilKeyframe = false
+            decodeBacklog = 0
+            backlogLock.unlock()
+            decodeQueue.async { [weak self] in
+                guard let self else { return }
+                self.decoder.reset()
+                self.decoder.handle(packet: payload)
+            }
+            return
+        }
+        // 落后超过约 1 秒的帧量：直接丢弃，等下一个 IDR 重建，保证低延迟
+        if decodeBacklog >= 30, !isKeyframe {
+            skippingUntilKeyframe = true
+            decodeBacklog = 0
+            backlogLock.unlock()
+            return
+        }
+        decodeBacklog += 1
+        backlogLock.unlock()
+
+        decodeQueue.async { [weak self] in
+            guard let self else { return }
+            self.decoder.handle(packet: payload)
+            self.backlogLock.lock()
+            self.decodeBacklog = max(0, self.decodeBacklog - 1)
+            self.backlogLock.unlock()
+        }
+    }
+
+    /// 主线程忙时合并显示：只保留最新一帧
+    private func present(_ image: CGImage) {
+        imageLock.lock()
+        latestImage = image
+        let needSchedule = !imageFlushScheduled
+        imageFlushScheduled = true
+        imageLock.unlock()
+
+        guard needSchedule else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.imageLock.lock()
+            let frame = self.latestImage
+            self.latestImage = nil
+            self.imageFlushScheduled = false
+            self.imageLock.unlock()
+            if let frame { self.sink.push(frame) }
         }
     }
 

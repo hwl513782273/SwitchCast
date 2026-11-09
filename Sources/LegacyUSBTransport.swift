@@ -7,6 +7,8 @@ final class LegacyUSBTransport: StreamTransport {
     private var serial = ""
     private let lock = NSLock()
     private var closed = false
+    /// 复用读缓冲：每个包重新 malloc 344KB 在老机器上会造成明显抖动
+    private var readBuffer: [UInt8] = []
 
     var onLog: ((String) -> Void)?
 
@@ -86,13 +88,15 @@ final class LegacyUSBTransport: StreamTransport {
 
     private func readChunk(timeout: Int32) throws -> Data {
         guard let handle else { throw UsbError.notConnected }
-        var buffer = [UInt8](repeating: 0, count: Self.transferSize)
-        let read = buffer.withUnsafeMutableBytes { raw -> Int32 in
+        if readBuffer.isEmpty {
+            readBuffer = [UInt8](repeating: 0, count: Self.transferSize)
+        }
+        let read = readBuffer.withUnsafeMutableBytes { raw -> Int32 in
             guard let base = raw.baseAddress else { return -1 }
             return sc_usb_read(handle, base, Int32(Self.transferSize), timeout)
         }
         if read > 0 {
-            return Data(buffer[0..<Int(read)])
+            return Data(readBuffer[0..<Int(read)])
         }
         if read == Int32(SC_USB_ERR_TIMEOUT) { throw UsbError.timeout }
         if read == Int32(SC_USB_ERR_CLOSED) { throw UsbError.closed }

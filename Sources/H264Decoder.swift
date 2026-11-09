@@ -263,6 +263,33 @@ final class H264Decoder {
 
     // MARK: - NAL 切分
 
+    /// 快速判断一个包里是否含 IDR（NAL type 5），不复制数据。
+    /// 收包线程用它决定"落后时是否可以跳过、等下一个 IDR 重建"。
+    static func containsIDR(_ packet: Data) -> Bool {
+        var found = false
+        packet.withUnsafeBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            let count = bytes.count
+            var i = 0
+            while i + 3 < count {
+                if bytes[i] == 0, bytes[i + 1] == 0 {
+                    if bytes[i + 2] == 1 {
+                        if bytes[i + 3] & 0x1F == 5 { found = true; return }
+                        i += 4
+                        continue
+                    }
+                    if bytes[i + 2] == 0, i + 4 < count, bytes[i + 3] == 1 {
+                        if bytes[i + 4] & 0x1F == 5 { found = true; return }
+                        i += 5
+                        continue
+                    }
+                }
+                i += 1
+            }
+        }
+        return found
+    }
+
     /// 返回 Annex-B 起始码之间的 NAL 单元（已去掉起始码与尾部零字节）
     static func nalUnits(in bytes: [UInt8]) -> [ArraySlice<UInt8>] {
         var markers: [(start: Int, codeLength: Int)] = []
