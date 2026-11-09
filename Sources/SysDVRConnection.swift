@@ -195,7 +195,7 @@ final class SysDVRConnection {
         case .network:
             return TCPTransport(host: host, port: SysDVR.videoPort)
         case .usb:
-            let transport = UsbTransport()
+            let transport = USBTransportFacade()
             transport.onLog = { [weak self] message in self?.log(message) }
             return transport
         }

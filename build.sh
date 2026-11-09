@@ -19,10 +19,22 @@ fi
 mkdir -p "$BUILD_DIR"
 TMPBIN=$(mktemp -d "${TMPDIR:-/tmp}/switchcast-bin.XXXXXX")
 
+SDK_PATH=$(xcrun --show-sdk-path)
+
+echo "🔧 编译 IOUSBLib C 桥（arm64 / x86_64）..."
+clang -O2 -c Sources/LegacyUSBShim.c -o "$TMPBIN/shim_arm64.o" \
+    -target "arm64-apple-macosx$MIN_MACOS" -isysroot "$SDK_PATH"
+clang -O2 -c Sources/LegacyUSBShim.c -o "$TMPBIN/shim_x86_64.o" \
+    -target "x86_64-apple-macosx$MIN_MACOS" -isysroot "$SDK_PATH"
+
 echo "🔨 编译 arm64..."
-swiftc -O -target "arm64-apple-macosx$MIN_MACOS" $FRAMEWORKS Sources/*.swift -o "$TMPBIN/sc_arm64"
+swiftc -O -target "arm64-apple-macosx$MIN_MACOS" $FRAMEWORKS \
+    -import-objc-header Sources/LegacyUSBShim.h \
+    Sources/*.swift "$TMPBIN/shim_arm64.o" -o "$TMPBIN/sc_arm64"
 echo "🔨 编译 x86_64..."
-swiftc -O -target "x86_64-apple-macosx$MIN_MACOS" $FRAMEWORKS Sources/*.swift -o "$TMPBIN/sc_x86_64"
+swiftc -O -target "x86_64-apple-macosx$MIN_MACOS" $FRAMEWORKS \
+    -import-objc-header Sources/LegacyUSBShim.h \
+    Sources/*.swift "$TMPBIN/shim_x86_64.o" -o "$TMPBIN/sc_x86_64"
 
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 

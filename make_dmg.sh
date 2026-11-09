@@ -3,7 +3,7 @@ set -e
 cd "$(dirname "$0")"
 
 APP_NAME="SwitchCast"
-VERSION="1.0.6"
+VERSION="1.0.7"
 APP_PATH="build/$APP_NAME.app"
 VOL_NAME="Switch Cast"
 DMG_NAME="12-${APP_NAME}-${VERSION}-universal.dmg"
